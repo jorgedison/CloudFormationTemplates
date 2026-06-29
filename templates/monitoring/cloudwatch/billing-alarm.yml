@@ -1,0 +1,56 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Crea una alarma de billing con notificacion por SNS.
+
+Parameters:
+  AlarmEmail:
+    Type: String
+    AllowedPattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$'
+    Description: Email que recibira la confirmacion de suscripcion SNS.
+  MonthlyThresholdUsd:
+    Type: Number
+    Default: 10
+    MinValue: 1
+    Description: Umbral aproximado de gasto mensual en USD.
+
+Resources:
+  BillingAlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: !Sub '${AWS::StackName} billing alarm'
+      TopicName: !Sub '${AWS::StackName}-billing-alarm'
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-billing-alarm'
+
+  BillingAlarmSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: !Ref AlarmEmail
+      Protocol: email
+      TopicArn: !Ref BillingAlarmTopic
+
+  EstimatedChargesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: !Sub 'Alarma cuando el gasto estimado supera ${MonthlyThresholdUsd} USD.'
+      AlarmActions:
+        - !Ref BillingAlarmTopic
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: Currency
+          Value: USD
+      EvaluationPeriods: 1
+      MetricName: EstimatedCharges
+      Namespace: AWS/Billing
+      Period: 21600
+      Statistic: Maximum
+      Threshold: !Ref MonthlyThresholdUsd
+      TreatMissingData: notBreaching
+
+Outputs:
+  TopicArn:
+    Description: ARN del topico SNS de notificaciones.
+    Value: !Ref BillingAlarmTopic
+  AlarmName:
+    Description: Nombre fisico de la alarma de billing.
+    Value: !Ref EstimatedChargesAlarm

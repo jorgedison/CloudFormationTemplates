@@ -1,0 +1,56 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Crea una tabla DynamoDB on-demand con cifrado y point-in-time recovery.
+
+Parameters:
+  TableName:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^[A-Za-z0-9_.-]{3,255}$'
+    Description: Nombre opcional de la tabla. Dejalo vacio para que CloudFormation genere uno.
+  PartitionKeyName:
+    Type: String
+    Default: pk
+    AllowedPattern: '^[A-Za-z][A-Za-z0-9_]*$'
+    Description: Nombre de la partition key.
+  SortKeyName:
+    Type: String
+    Default: sk
+    AllowedPattern: '^[A-Za-z][A-Za-z0-9_]*$'
+    Description: Nombre de la sort key.
+
+Conditions:
+  UseTableName: !Not [!Equals [!Ref TableName, '']]
+
+Resources:
+  AppTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !If [UseTableName, !Ref TableName, !Ref AWS::NoValue]
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: !Ref PartitionKeyName
+          AttributeType: S
+        - AttributeName: !Ref SortKeyName
+          AttributeType: S
+      KeySchema:
+        - AttributeName: !Ref PartitionKeyName
+          KeyType: HASH
+        - AttributeName: !Ref SortKeyName
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-table'
+
+Outputs:
+  TableName:
+    Description: Nombre de la tabla DynamoDB.
+    Value: !Ref AppTable
+  TableArn:
+    Description: ARN de la tabla DynamoDB.
+    Value: !GetAtt AppTable.Arn

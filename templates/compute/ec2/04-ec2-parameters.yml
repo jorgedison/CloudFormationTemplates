@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Crea una instancia EC2 parametrizada por ambiente y acceso SSH restringido.
+
+Mappings:
+  EnvironmentMap:
+    dev:
+      InstanceType: t3.micro
+    prod:
+      InstanceType: t3.small
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC donde se creara el grupo de seguridad.
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Subnet donde se lanzara la instancia EC2.
+  EnvironmentParameter:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+    Description: Ambiente que define el tipo de instancia.
+  AllowedSshCidr:
+    Type: String
+    Default: 203.0.113.10/32
+    AllowedPattern: '^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$'
+    ConstraintDescription: Ingresa un CIDR IPv4 valido, por ejemplo 203.0.113.10/32.
+    Description: CIDR permitido para SSH. Reemplaza el valor por tu IP publica /32.
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: AMI de Amazon Linux obtenida desde Parameter Store.
+
+Resources:
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Acceso SSH restringido
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - CidrIp: !Ref AllowedSshCidr
+          FromPort: 22
+          IpProtocol: tcp
+          ToPort: 22
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-sg'
+
+  MyEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !FindInMap [EnvironmentMap, !Ref EnvironmentParameter, InstanceType]
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      MetadataOptions:
+        HttpEndpoint: enabled
+        HttpTokens: required
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-${EnvironmentParameter}-ec2'
+
+Outputs:
+  InstanceID:
+    Description: ID de la instancia EC2.
+    Value: !Ref MyEC2Instance

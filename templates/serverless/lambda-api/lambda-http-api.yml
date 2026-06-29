@@ -1,0 +1,123 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Crea una funcion Lambda expuesta por API Gateway HTTP API.
+
+Parameters:
+  FunctionName:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^[A-Za-z0-9-_]{1,64}$'
+    Description: Nombre opcional de la funcion Lambda.
+  LogRetentionInDays:
+    Type: Number
+    Default: 14
+    AllowedValues:
+      - 1
+      - 3
+      - 5
+      - 7
+      - 14
+      - 30
+      - 60
+      - 90
+    Description: Dias de retencion de logs en CloudWatch.
+
+Conditions:
+  UseFunctionName: !Not [!Equals [!Ref FunctionName, '']]
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-lambda-role'
+
+  ApiFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !If [UseFunctionName, !Ref FunctionName, !Ref AWS::NoValue]
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 10
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          import json
+
+          def handler(event, context):
+              body = {
+                  "message": "Hello from Lambda and CloudFormation",
+                  "requestId": event.get("requestContext", {}).get("requestId")
+              }
+              return {
+                  "statusCode": 200,
+                  "headers": {"content-type": "application/json"},
+                  "body": json.dumps(body)
+              }
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-function'
+
+  ApiFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ApiFunction}'
+      RetentionInDays: !Ref LogRetentionInDays
+
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub '${AWS::StackName}-http-api'
+      ProtocolType: HTTP
+      Tags:
+        Name: !Sub '${AWS::StackName}-http-api'
+
+  LambdaIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ApiFunction.Arn
+      PayloadFormatVersion: '2.0'
+
+  DefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'GET /'
+      Target: !Sub 'integrations/${LambdaIntegration}'
+
+  DefaultStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: '$default'
+      AutoDeploy: true
+      Tags:
+        Name: !Sub '${AWS::StackName}-default-stage'
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ApiFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*'
+
+Outputs:
+  ApiEndpoint:
+    Description: Endpoint publico del HTTP API.
+    Value: !GetAtt HttpApi.ApiEndpoint
+  FunctionName:
+    Description: Nombre de la funcion Lambda.
+    Value: !Ref ApiFunction

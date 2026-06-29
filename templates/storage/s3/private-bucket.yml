@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Crea un bucket S3 privado con cifrado, versionado y bloqueo de acceso publico.
+
+Parameters:
+  BucketName:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$'
+    Description: Nombre opcional del bucket. Dejalo vacio para que CloudFormation genere uno.
+  EnableVersioning:
+    Type: String
+    Default: Enabled
+    AllowedValues:
+      - Enabled
+      - Suspended
+    Description: Estado del versionado del bucket.
+
+Conditions:
+  UseBucketName: !Not [!Equals [!Ref BucketName, '']]
+
+Resources:
+  PrivateBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !If [UseBucketName, !Ref BucketName, !Ref AWS::NoValue]
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: !Ref EnableVersioning
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-private-bucket'
+
+  EnforceTLSBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref PrivateBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt PrivateBucket.Arn
+              - !Sub '${PrivateBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+
+Outputs:
+  BucketName:
+    Description: Nombre del bucket S3.
+    Value: !Ref PrivateBucket
+  BucketArn:
+    Description: ARN del bucket S3.
+    Value: !GetAtt PrivateBucket.Arn
