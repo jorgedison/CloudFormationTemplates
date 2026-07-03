@@ -56,7 +56,7 @@ if failed:
 PY
 
 if command -v cfn-lint >/dev/null 2>&1; then
-  cfn-lint "${templates[@]}"
+  cfn-lint "${templates[@]}" --format parseable --include-checks W
 else
   echo "WARN: cfn-lint no esta instalado; se omite validacion CloudFormation."
 fi

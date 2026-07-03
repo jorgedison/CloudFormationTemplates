@@ -74,6 +74,10 @@ Outputs:
   InstanceID:
     Description: ID de la instancia EC2.
     Value: !Ref MyEC2Instance
+    Export:
+      Name: !Sub '${AWS::StackName}-InstanceId'
   ElasticIP:
     Description: Elastic IP asociada a la instancia.
     Value: !Ref MyEIP
+    Export:
+      Name: !Sub '${AWS::StackName}-ElasticIp'

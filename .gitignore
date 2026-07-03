@@ -1,0 +1,28 @@
+# Outputs temporales de AWS CLI
+*.json.bak
+samconfig.toml
+
+# Artefactos de Python / cfn-lint
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Credenciales y configuracion local
+.env
+.env.*
+*.pem
+*.key
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# macOS
+.DS_Store
+
+# Outputs de packaged templates
+packaged-*.yml
+packaged-*.yaml

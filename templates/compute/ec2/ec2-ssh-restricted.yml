@@ -69,6 +69,10 @@ Outputs:
   InstanceID:
     Description: ID de la instancia EC2.
     Value: !Ref MyEC2Instance
+    Export:
+      Name: !Sub '${AWS::StackName}-InstanceId'
   SecurityGroupID:
     Description: ID del grupo de seguridad.
     Value: !Ref InstanceSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-SecurityGroupId'

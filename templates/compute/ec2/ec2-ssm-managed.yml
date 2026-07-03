@@ -73,9 +73,15 @@ Outputs:
   InstanceID:
     Description: ID de la instancia EC2.
     Value: !Ref MyEC2Instance
+    Export:
+      Name: !Sub '${AWS::StackName}-InstanceId'
   SecurityGroupID:
     Description: ID del grupo de seguridad sin reglas de entrada.
     Value: !Ref InstanceSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-SecurityGroupId'
   InstanceRoleName:
     Description: Rol IAM usado para SSM Session Manager.
     Value: !Ref InstanceRole
+    Export:
+      Name: !Sub '${AWS::StackName}-InstanceRoleName'

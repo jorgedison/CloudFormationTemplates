@@ -37,6 +37,7 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-lambda-role'
@@ -50,6 +51,8 @@ Resources:
       Role: !GetAtt LambdaExecutionRole.Arn
       Timeout: 10
       MemorySize: 128
+      TracingConfig:
+        Mode: Active
       Code:
         ZipFile: |
           import json
@@ -74,11 +77,26 @@ Resources:
       LogGroupName: !Sub '/aws/lambda/${ApiFunction}'
       RetentionInDays: !Ref LogRetentionInDays
 
+  ApiAccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/apigateway/${AWS::StackName}-access-logs'
+      RetentionInDays: !Ref LogRetentionInDays
+
   HttpApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
       Name: !Sub '${AWS::StackName}-http-api'
       ProtocolType: HTTP
+      CorsConfiguration:
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+        AllowMethods:
+          - GET
+          - OPTIONS
+        AllowOrigins:
+          - '*'
       Tags:
         Name: !Sub '${AWS::StackName}-http-api'
 
@@ -103,6 +121,12 @@ Resources:
       ApiId: !Ref HttpApi
       StageName: '$default'
       AutoDeploy: true
+      AccessLogSettings:
+        DestinationArn: !GetAtt ApiAccessLogGroup.Arn
+        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","routeKey":"$context.routeKey","status":"$context.status","responseLength":"$context.responseLength","integrationLatency":"$context.integrationLatency"}'
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 100
+        ThrottlingRateLimit: 50
       Tags:
         Name: !Sub '${AWS::StackName}-default-stage'
 
@@ -118,6 +142,10 @@ Outputs:
   ApiEndpoint:
     Description: Endpoint publico del HTTP API.
     Value: !GetAtt HttpApi.ApiEndpoint
+    Export:
+      Name: !Sub '${AWS::StackName}-ApiEndpoint'
   FunctionName:
     Description: Nombre de la funcion Lambda.
     Value: !Ref ApiFunction
+    Export:
+      Name: !Sub '${AWS::StackName}-FunctionName'

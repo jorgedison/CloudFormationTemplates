@@ -51,6 +51,10 @@ Outputs:
   TopicArn:
     Description: ARN del topico SNS de notificaciones.
     Value: !Ref BillingAlarmTopic
+    Export:
+      Name: !Sub '${AWS::StackName}-TopicArn'
   AlarmName:
     Description: Nombre fisico de la alarma de billing.
     Value: !Ref EstimatedChargesAlarm
+    Export:
+      Name: !Sub '${AWS::StackName}-AlarmName'

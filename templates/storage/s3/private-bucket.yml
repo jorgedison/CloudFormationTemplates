@@ -65,6 +65,10 @@ Outputs:
   BucketName:
     Description: Nombre del bucket S3.
     Value: !Ref PrivateBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketName'
   BucketArn:
     Description: ARN del bucket S3.
     Value: !GetAtt PrivateBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketArn'

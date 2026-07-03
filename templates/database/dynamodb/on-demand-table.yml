@@ -17,6 +17,16 @@ Parameters:
     Default: sk
     AllowedPattern: '^[A-Za-z][A-Za-z0-9_]*$'
     Description: Nombre de la sort key.
+  PartitionKeyType:
+    Type: String
+    Default: S
+    AllowedValues: [S, N, B]
+    Description: Tipo de la partition key (S=String, N=Number, B=Binary).
+  SortKeyType:
+    Type: String
+    Default: S
+    AllowedValues: [S, N, B]
+    Description: Tipo de la sort key (S=String, N=Number, B=Binary).
 
 Conditions:
   UseTableName: !Not [!Equals [!Ref TableName, '']]
@@ -31,9 +41,9 @@ Resources:
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: !Ref PartitionKeyName
-          AttributeType: S
+          AttributeType: !Ref PartitionKeyType
         - AttributeName: !Ref SortKeyName
-          AttributeType: S
+          AttributeType: !Ref SortKeyType
       KeySchema:
         - AttributeName: !Ref PartitionKeyName
           KeyType: HASH
@@ -51,6 +61,10 @@ Outputs:
   TableName:
     Description: Nombre de la tabla DynamoDB.
     Value: !Ref AppTable
+    Export:
+      Name: !Sub '${AWS::StackName}-TableName'
   TableArn:
     Description: ARN de la tabla DynamoDB.
     Value: !GetAtt AppTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-TableArn'
