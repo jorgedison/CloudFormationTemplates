@@ -1,6 +1,34 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Crea una funcion Lambda expuesta por API Gateway HTTP API.
 
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Funcion Lambda"
+        Parameters: [FunctionName, LambdaTimeout, LambdaMemorySize, LambdaArchitecture, EnvironmentName]
+      - Label:
+          default: "Logging"
+        Parameters: [LogRetentionInDays]
+      - Label:
+          default: "Resiliencia"
+        Parameters: [EnableDlq]
+    ParameterLabels:
+      FunctionName:
+        default: "Nombre de la funcion"
+      LambdaTimeout:
+        default: "Timeout (segundos)"
+      LambdaMemorySize:
+        default: "Memoria (MB)"
+      LambdaArchitecture:
+        default: "Arquitectura"
+      EnvironmentName:
+        default: "Ambiente"
+      LogRetentionInDays:
+        default: "Retencion de logs (dias)"
+      EnableDlq:
+        default: "Habilitar Dead Letter Queue"
+
 Parameters:
   FunctionName:
     Type: String
@@ -28,6 +56,11 @@ Parameters:
     Default: 'true'
     AllowedValues: ['true', 'false']
     Description: Habilita una cola SQS como Dead Letter Queue para invocaciones asincronas de la funcion.
+  LambdaArchitecture:
+    Type: String
+    Default: arm64
+    AllowedValues: [x86_64, arm64]
+    Description: Arquitectura de la funcion. arm64 (Graviton2) es ~20% mas barato con igual o mejor rendimiento.
   EnvironmentName:
     Type: String
     Default: lab
@@ -63,6 +96,8 @@ Resources:
       Runtime: python3.12
       Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
+      Architectures:
+        - !Ref LambdaArchitecture
       Timeout: !Ref LambdaTimeout
       MemorySize: !Ref LambdaMemorySize
       DeadLetterConfig: !If

@@ -1,6 +1,30 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Crea una instancia EC2 parametrizada por ambiente y acceso SSH restringido.
 
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Red"
+        Parameters: [VpcId, SubnetId]
+      - Label:
+          default: "Instancia"
+        Parameters: [EnvironmentParameter, LatestAmiId]
+      - Label:
+          default: "Seguridad"
+        Parameters: [AllowedSshCidr]
+    ParameterLabels:
+      VpcId:
+        default: "ID de la VPC"
+      SubnetId:
+        default: "ID de la Subnet"
+      EnvironmentParameter:
+        default: "Ambiente"
+      LatestAmiId:
+        default: "AMI (SSM Parameter Store)"
+      AllowedSshCidr:
+        default: "CIDR permitido para SSH"
+
 Mappings:
   EnvironmentMap:
     dev:

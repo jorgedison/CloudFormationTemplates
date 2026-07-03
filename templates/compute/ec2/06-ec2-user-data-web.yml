@@ -1,6 +1,32 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Crea una instancia EC2 con Apache via UserData y HTTP publico.
 
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Red"
+        Parameters: [VpcId, SubnetId]
+      - Label:
+          default: "Instancia"
+        Parameters: [InstanceType, LatestAmiId]
+      - Label:
+          default: "Seguridad"
+        Parameters: [AllowedSshCidr, AllowedHttpCidr]
+    ParameterLabels:
+      VpcId:
+        default: "ID de la VPC"
+      SubnetId:
+        default: "ID de la Subnet"
+      InstanceType:
+        default: "Tipo de instancia"
+      LatestAmiId:
+        default: "AMI (SSM Parameter Store)"
+      AllowedSshCidr:
+        default: "CIDR permitido para SSH"
+      AllowedHttpCidr:
+        default: "CIDR permitido para HTTP"
+
 Parameters:
   VpcId:
     Type: AWS::EC2::VPC::Id

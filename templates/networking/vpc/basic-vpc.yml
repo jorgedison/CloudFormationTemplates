@@ -1,6 +1,32 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Crea una VPC basica con dos subnets publicas y salida a internet.
 
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Direccionamiento IP"
+        Parameters: [VpcCidr, PublicSubnetOneCidr, PublicSubnetTwoCidr]
+      - Label:
+          default: "Observabilidad"
+        Parameters: [EnableFlowLogs, FlowLogRetentionInDays]
+      - Label:
+          default: "Configuracion"
+        Parameters: [EnvironmentName]
+    ParameterLabels:
+      VpcCidr:
+        default: "CIDR de la VPC"
+      PublicSubnetOneCidr:
+        default: "CIDR Subnet Publica 1 (AZ-a)"
+      PublicSubnetTwoCidr:
+        default: "CIDR Subnet Publica 2 (AZ-b)"
+      EnableFlowLogs:
+        default: "Habilitar VPC Flow Logs"
+      FlowLogRetentionInDays:
+        default: "Retencion de Flow Logs (dias)"
+      EnvironmentName:
+        default: "Ambiente"
+
 Parameters:
   VpcCidr:
     Type: String

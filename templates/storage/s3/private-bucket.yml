@@ -1,6 +1,25 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Crea un bucket S3 privado con cifrado, versionado y bloqueo de acceso publico.
 
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Identificacion"
+        Parameters: [BucketName, EnvironmentName]
+      - Label:
+          default: "Versionado y ciclo de vida"
+        Parameters: [EnableVersioning, NoncurrentVersionRetentionDays]
+    ParameterLabels:
+      BucketName:
+        default: "Nombre del bucket"
+      EnvironmentName:
+        default: "Ambiente"
+      EnableVersioning:
+        default: "Versionado"
+      NoncurrentVersionRetentionDays:
+        default: "Retencion de versiones antiguas (dias)"
+
 Parameters:
   BucketName:
     Type: String

@@ -1,6 +1,34 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Crea una tabla DynamoDB on-demand con cifrado y point-in-time recovery.
 
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Identificacion"
+        Parameters: [TableName, EnvironmentName]
+      - Label:
+          default: "Partition Key"
+        Parameters: [PartitionKeyName, PartitionKeyType]
+      - Label:
+          default: "Sort Key"
+        Parameters: [EnableSortKey, SortKeyName, SortKeyType]
+    ParameterLabels:
+      TableName:
+        default: "Nombre de la tabla"
+      EnvironmentName:
+        default: "Ambiente"
+      PartitionKeyName:
+        default: "Nombre de la partition key"
+      PartitionKeyType:
+        default: "Tipo de la partition key"
+      EnableSortKey:
+        default: "Habilitar sort key"
+      SortKeyName:
+        default: "Nombre de la sort key"
+      SortKeyType:
+        default: "Tipo de la sort key"
+
 Parameters:
   TableName:
     Type: String

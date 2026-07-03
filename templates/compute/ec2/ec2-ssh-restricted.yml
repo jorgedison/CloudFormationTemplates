@@ -2,6 +2,37 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Plantilla corregida para crear una instancia EC2 con SSH restringido.
 
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Red"
+        Parameters: [VpcId, SubnetId]
+      - Label:
+          default: "Instancia"
+        Parameters: [InstanceType, LatestAmiId]
+      - Label:
+          default: "Acceso SSH"
+        Parameters: [AllowedSshCidr, KeyName]
+      - Label:
+          default: "Configuracion"
+        Parameters: [EnvironmentName]
+    ParameterLabels:
+      VpcId:
+        default: "ID de la VPC"
+      SubnetId:
+        default: "ID de la Subnet"
+      InstanceType:
+        default: "Tipo de instancia"
+      LatestAmiId:
+        default: "AMI (SSM Parameter Store)"
+      AllowedSshCidr:
+        default: "CIDR permitido para SSH"
+      KeyName:
+        default: "Nombre del KeyPair"
+      EnvironmentName:
+        default: "Ambiente"
+
 Parameters:
   VpcId:
     Type: AWS::EC2::VPC::Id

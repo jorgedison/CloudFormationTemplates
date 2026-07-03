@@ -1,6 +1,25 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Crea una instancia EC2 basica en una subnet existente.
 
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Red"
+        Parameters: [VpcId, SubnetId]
+      - Label:
+          default: "Instancia"
+        Parameters: [InstanceType, LatestAmiId]
+    ParameterLabels:
+      VpcId:
+        default: "ID de la VPC"
+      SubnetId:
+        default: "ID de la Subnet"
+      InstanceType:
+        default: "Tipo de instancia"
+      LatestAmiId:
+        default: "AMI (SSM Parameter Store)"
+
 Parameters:
   VpcId:
     Type: AWS::EC2::VPC::Id

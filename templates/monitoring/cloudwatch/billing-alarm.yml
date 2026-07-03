@@ -1,6 +1,28 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Crea una alarma de billing con notificacion por SNS.
 
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Notificacion"
+        Parameters: [AlarmEmail]
+      - Label:
+          default: "Umbral y periodo"
+        Parameters: [MonthlyThresholdUsd, AlarmPeriodSeconds]
+      - Label:
+          default: "Configuracion"
+        Parameters: [EnvironmentName]
+    ParameterLabels:
+      AlarmEmail:
+        default: "Email para notificaciones SNS"
+      MonthlyThresholdUsd:
+        default: "Umbral mensual (USD)"
+      AlarmPeriodSeconds:
+        default: "Periodo de evaluacion (segundos)"
+      EnvironmentName:
+        default: "Ambiente"
+
 Parameters:
   AlarmEmail:
     Type: String

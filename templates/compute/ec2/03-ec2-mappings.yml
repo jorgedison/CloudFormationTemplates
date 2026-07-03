@@ -1,6 +1,25 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Crea una instancia EC2 usando mappings por ambiente.
 
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Red"
+        Parameters: [VpcId, SubnetId]
+      - Label:
+          default: "Instancia"
+        Parameters: [EnvironmentName, LatestAmiId]
+    ParameterLabels:
+      VpcId:
+        default: "ID de la VPC"
+      SubnetId:
+        default: "ID de la Subnet"
+      EnvironmentName:
+        default: "Ambiente"
+      LatestAmiId:
+        default: "AMI (SSM Parameter Store)"
+
 Mappings:
   EnvironmentMap:
     dev:
