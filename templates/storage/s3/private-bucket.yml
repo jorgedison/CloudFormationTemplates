@@ -14,9 +14,20 @@ Parameters:
       - Enabled
       - Suspended
     Description: Estado del versionado del bucket.
+  NoncurrentVersionRetentionDays:
+    Type: Number
+    Default: 90
+    MinValue: 1
+    Description: Dias que se retienen versiones antiguas antes de eliminarlas (solo aplica con versionado habilitado).
+  EnvironmentName:
+    Type: String
+    Default: lab
+    AllowedValues: [lab, dev, staging, prod]
+    Description: Ambiente de despliegue usado en los tags.
 
 Conditions:
   UseBucketName: !Not [!Equals [!Ref BucketName, '']]
+  VersioningEnabled: !Equals [!Ref EnableVersioning, 'Enabled']
 
 Resources:
   PrivateBucket:
@@ -39,9 +50,23 @@ Resources:
         RestrictPublicBuckets: true
       VersioningConfiguration:
         Status: !Ref EnableVersioning
+      LifecycleConfiguration: !If
+        - VersioningEnabled
+        - Rules:
+            - Id: CleanOldVersions
+              Status: Enabled
+              NoncurrentVersionExpiration:
+                NoncurrentDays: !Ref NoncurrentVersionRetentionDays
+              AbortIncompleteMultipartUpload:
+                DaysAfterInitiation: 7
+        - !Ref AWS::NoValue
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-private-bucket'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
 
   EnforceTLSBucketPolicy:
     Type: AWS::S3::BucketPolicy

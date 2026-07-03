@@ -27,9 +27,20 @@ Parameters:
     Default: S
     AllowedValues: [S, N, B]
     Description: Tipo de la sort key (S=String, N=Number, B=Binary).
+  EnableSortKey:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Incluye una sort key (RANGE) en la tabla. Desactivalo para tablas de solo partition key.
+  EnvironmentName:
+    Type: String
+    Default: lab
+    AllowedValues: [lab, dev, staging, prod]
+    Description: Ambiente de despliegue usado en los tags.
 
 Conditions:
   UseTableName: !Not [!Equals [!Ref TableName, '']]
+  HasSortKey: !Equals [!Ref EnableSortKey, 'true']
 
 Resources:
   AppTable:
@@ -42,13 +53,19 @@ Resources:
       AttributeDefinitions:
         - AttributeName: !Ref PartitionKeyName
           AttributeType: !Ref PartitionKeyType
-        - AttributeName: !Ref SortKeyName
-          AttributeType: !Ref SortKeyType
+        - !If
+          - HasSortKey
+          - AttributeName: !Ref SortKeyName
+            AttributeType: !Ref SortKeyType
+          - !Ref AWS::NoValue
       KeySchema:
         - AttributeName: !Ref PartitionKeyName
           KeyType: HASH
-        - AttributeName: !Ref SortKeyName
-          KeyType: RANGE
+        - !If
+          - HasSortKey
+          - AttributeName: !Ref SortKeyName
+            KeyType: RANGE
+          - !Ref AWS::NoValue
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
       SSESpecification:
@@ -56,6 +73,10 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-table'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
 
 Outputs:
   TableName:

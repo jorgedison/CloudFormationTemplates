@@ -17,6 +17,24 @@ Parameters:
     Default: 10.0.1.0/24
     AllowedPattern: '^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$'
     Description: CIDR IPv4 para la segunda subnet publica.
+  EnableFlowLogs:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Habilita VPC Flow Logs en CloudWatch Logs para auditoria de trafico.
+  FlowLogRetentionInDays:
+    Type: Number
+    Default: 14
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90]
+    Description: Dias de retencion de VPC Flow Logs en CloudWatch.
+  EnvironmentName:
+    Type: String
+    Default: lab
+    AllowedValues: [lab, dev, staging, prod]
+    Description: Ambiente de despliegue usado en los tags.
+
+Conditions:
+  EnableFlowLogsCondition: !Equals [!Ref EnableFlowLogs, 'true']
 
 Resources:
   VPC:
@@ -28,6 +46,10 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-vpc'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
@@ -92,6 +114,57 @@ Resources:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref PublicSubnetTwo
 
+  FlowLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: EnableFlowLogsCondition
+    Properties:
+      LogGroupName: !Sub '/aws/vpc/flowlogs/${AWS::StackName}'
+      RetentionInDays: !Ref FlowLogRetentionInDays
+
+  FlowLogRole:
+    Type: AWS::IAM::Role
+    Condition: EnableFlowLogsCondition
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: vpc-flow-logs.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: VpcFlowLogsWritePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                Resource: !GetAtt FlowLogGroup.Arn
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-flowlog-role'
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  VpcFlowLog:
+    Type: AWS::EC2::FlowLog
+    Condition: EnableFlowLogsCondition
+    Properties:
+      DeliverLogsPermissionArn: !GetAtt FlowLogRole.Arn
+      LogGroupName: !Ref FlowLogGroup
+      ResourceId: !Ref VPC
+      ResourceType: VPC
+      TrafficType: ALL
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-flow-log'
+        - Key: ManagedBy
+          Value: CloudFormation
+
 Outputs:
   VpcId:
     Description: ID de la VPC creada.
@@ -108,3 +181,9 @@ Outputs:
     Value: !Ref PublicSubnetTwo
     Export:
       Name: !Sub '${AWS::StackName}-PublicSubnetTwoId'
+  FlowLogGroupName:
+    Condition: EnableFlowLogsCondition
+    Description: Nombre del log group de VPC Flow Logs en CloudWatch.
+    Value: !Ref FlowLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-FlowLogGroupName'

@@ -11,6 +11,16 @@ Parameters:
     Default: 10
     MinValue: 1
     Description: Umbral aproximado de gasto mensual en USD.
+  AlarmPeriodSeconds:
+    Type: Number
+    Default: 21600
+    AllowedValues: [21600, 43200, 86400]
+    Description: Periodo de evaluacion en segundos (21600=6h, 43200=12h, 86400=24h).
+  EnvironmentName:
+    Type: String
+    Default: lab
+    AllowedValues: [lab, dev, staging, prod]
+    Description: Ambiente de despliegue usado en los tags.
 
 Resources:
   BillingAlarmTopic:
@@ -21,6 +31,10 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-billing-alarm'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
 
   BillingAlarmSubscription:
     Type: AWS::SNS::Subscription
@@ -42,7 +56,7 @@ Resources:
       EvaluationPeriods: 1
       MetricName: EstimatedCharges
       Namespace: AWS/Billing
-      Period: 21600
+      Period: !Ref AlarmPeriodSeconds
       Statistic: Maximum
       Threshold: !Ref MonthlyThresholdUsd
       TreatMissingData: notBreaching

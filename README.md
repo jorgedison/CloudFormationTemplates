@@ -1,6 +1,6 @@
 # AWS CloudFormation Templates
 
-Repositorio de ejemplos CloudFormation organizados por dominio de AWS. La idea ya no es mostrar solo EC2, sino tener plantillas pequenas, legibles y reutilizables para aprender y arrancar pruebas de infraestructura.
+Repositorio de ejemplos CloudFormation organizados por dominio de AWS. Plantillas pequeñas, legibles y reutilizables para aprender y arrancar pruebas de infraestructura.
 
 ## Estructura
 
@@ -26,19 +26,19 @@ scripts/
 
 | Categoria | Plantilla | Proposito |
 | --- | --- | --- |
-| Networking | `templates/networking/vpc/basic-vpc.yml` | VPC con dos subnets publicas, Internet Gateway y rutas. |
-| Compute | `templates/compute/ec2/ec2-ssm-managed.yml` | EC2 administrable por SSM, sin SSH abierto. |
-| Compute | `templates/compute/ec2/ec2-ssh-restricted.yml` | EC2 con SSH restringido por CIDR. |
+| Networking | `templates/networking/vpc/basic-vpc.yml` | VPC con dos subnets publicas, Internet Gateway, rutas y Flow Logs opcionales. |
+| Compute | `templates/compute/ec2/ec2-ssm-managed.yml` | EC2 administrable por SSM, sin SSH abierto. Tags de ambiente. |
+| Compute | `templates/compute/ec2/ec2-ssh-restricted.yml` | EC2 con SSH restringido por CIDR y KeyPair opcional. Tags de ambiente. |
 | Compute | `templates/compute/ec2/01-ec2-instance.yml` | Ejemplo basico de EC2. |
 | Compute | `templates/compute/ec2/02-ec2-elastic-ip.yml` | EC2 con Elastic IP. |
 | Compute | `templates/compute/ec2/03-ec2-mappings.yml` | EC2 usando mappings por ambiente. |
 | Compute | `templates/compute/ec2/04-ec2-parameters.yml` | EC2 con parametros y SSH restringido. |
 | Compute | `templates/compute/ec2/05-ec2-elastic-ip-security-group.yml` | EC2 con Elastic IP y Security Group. |
-| Compute | `templates/compute/ec2/06-ec2-user-data-web.yml` | EC2 con Apache instalado via UserData. |
-| Storage | `templates/storage/s3/private-bucket.yml` | Bucket S3 privado con cifrado, versionado y bloqueo publico. |
-| Database | `templates/database/dynamodb/on-demand-table.yml` | Tabla DynamoDB on-demand con PITR y cifrado. |
-| Serverless | `templates/serverless/lambda-api/lambda-http-api.yml` | Lambda Python expuesta con API Gateway HTTP API. |
-| Monitoring | `templates/monitoring/cloudwatch/billing-alarm.yml` | Alarma de billing con notificacion por SNS. |
+| Compute | `templates/compute/ec2/06-ec2-user-data-web.yml` | EC2 con Apache via UserData y señalizacion cfn-signal. |
+| Storage | `templates/storage/s3/private-bucket.yml` | Bucket S3 privado con cifrado, versionado, bloqueo publico y lifecycle de versiones. |
+| Database | `templates/database/dynamodb/on-demand-table.yml` | Tabla DynamoDB on-demand con PITR, cifrado y sort key opcional. |
+| Serverless | `templates/serverless/lambda-api/lambda-http-api.yml` | Lambda Python con API Gateway HTTP API, X-Ray, CORS, throttling y DLQ opcional. |
+| Monitoring | `templates/monitoring/cloudwatch/billing-alarm.yml` | Alarma de billing con notificacion SNS y periodo configurable. |
 
 ## Despliegue
 
@@ -47,7 +47,8 @@ scripts/
 ```bash
 aws cloudformation deploy \
   --stack-name lab-vpc \
-  --template-file templates/networking/vpc/basic-vpc.yml
+  --template-file templates/networking/vpc/basic-vpc.yml \
+  --capabilities CAPABILITY_IAM
 ```
 
 Obtienes los IDs con:
@@ -58,6 +59,9 @@ aws cloudformation describe-stacks \
   --query 'Stacks[0].Outputs'
 ```
 
+> **Nota:** `EnableFlowLogs=true` por defecto. Requiere `CAPABILITY_IAM` por el rol de Flow Logs.
+> Para desactivarlos: `--parameter-overrides EnableFlowLogs=false`
+
 ### 2. Crear una EC2 administrable por SSM
 
 ```bash
@@ -67,7 +71,8 @@ aws cloudformation deploy \
   --capabilities CAPABILITY_IAM \
   --parameter-overrides \
     VpcId=vpc-xxxxxxxx \
-    SubnetId=subnet-xxxxxxxx
+    SubnetId=subnet-xxxxxxxx \
+    EnvironmentName=dev
 ```
 
 La subnet necesita salida a internet o VPC endpoints para SSM, SSM Messages y EC2 Messages.
@@ -77,15 +82,26 @@ La subnet necesita salida a internet o VPC endpoints para SSM, SSM Messages y EC
 ```bash
 aws cloudformation deploy \
   --stack-name lab-s3-private \
-  --template-file templates/storage/s3/private-bucket.yml
+  --template-file templates/storage/s3/private-bucket.yml \
+  --parameter-overrides EnvironmentName=dev
 ```
+
+Las versiones antiguas expiran tras 90 dias por defecto (configurable con `NoncurrentVersionRetentionDays`).
 
 ### 4. Crear una tabla DynamoDB
 
 ```bash
+# Con sort key (defecto)
 aws cloudformation deploy \
   --stack-name lab-dynamodb \
-  --template-file templates/database/dynamodb/on-demand-table.yml
+  --template-file templates/database/dynamodb/on-demand-table.yml \
+  --parameter-overrides EnvironmentName=dev
+
+# Solo partition key
+aws cloudformation deploy \
+  --stack-name lab-dynamodb-pk \
+  --template-file templates/database/dynamodb/on-demand-table.yml \
+  --parameter-overrides EnableSortKey=false EnvironmentName=dev
 ```
 
 ### 5. Crear una API serverless
@@ -94,8 +110,11 @@ aws cloudformation deploy \
 aws cloudformation deploy \
   --stack-name lab-lambda-api \
   --template-file templates/serverless/lambda-api/lambda-http-api.yml \
-  --capabilities CAPABILITY_IAM
+  --capabilities CAPABILITY_IAM \
+  --parameter-overrides EnvironmentName=dev
 ```
+
+La DLQ SQS se crea por defecto (`EnableDlq=true`). Solo captura fallos de invocaciones asincronas.
 
 ### 6. Crear una alarma de billing
 
@@ -106,10 +125,23 @@ aws cloudformation deploy \
   --region us-east-1 \
   --stack-name lab-billing-alarm \
   --template-file templates/monitoring/cloudwatch/billing-alarm.yml \
-  --parameter-overrides AlarmEmail=tu-correo@example.com MonthlyThresholdUsd=10
+  --parameter-overrides \
+    AlarmEmail=tu-correo@example.com \
+    MonthlyThresholdUsd=10 \
+    AlarmPeriodSeconds=21600
 ```
 
 Despues del despliegue debes confirmar la suscripcion SNS desde el correo recibido.
+
+## Referencias cross-stack
+
+Todos los templates exportan sus outputs principales con el patron `${AWS::StackName}-<Recurso>`.
+Ejemplo para usar el VPC ID en otro stack:
+
+```yaml
+VpcId: !ImportValue 'lab-vpc-VpcId'
+SubnetId: !ImportValue 'lab-vpc-PublicSubnetOneId'
+```
 
 ## Validacion
 
@@ -119,7 +151,7 @@ Ejecuta:
 ./scripts/validate.sh
 ```
 
-El script carga todas las plantillas `templates/**/*.yml` con PyYAML y, si estan instalados, tambien ejecuta `cfn-lint` y `yamllint`.
+El script valida las plantillas con PyYAML y, si estan instalados, ejecuta `cfn-lint` y `yamllint`.
 
 Herramientas recomendadas:
 
@@ -127,11 +159,20 @@ Herramientas recomendadas:
 pip install cfn-lint yamllint
 ```
 
-## Criterios usados
+La configuracion de `cfn-lint` esta en `.cfnlintrc` (regiones, checks habilitados).
 
-- Plantillas pequenas y enfocadas.
-- Parametros para valores de cuenta, VPC, subnet y nombres opcionales.
+## Criterios de diseño
+
+- Plantillas pequeñas y enfocadas en un solo recurso o patron.
+- Parametros para valores de cuenta, VPC, subnet, ambiente y nombres opcionales.
 - Sin AMIs hardcodeadas en EC2; se usa Parameter Store.
 - Sin SSH abierto a internet por defecto.
 - Recursos con cifrado o configuraciones seguras cuando aplica.
-- `DeletionPolicy: Retain` en recursos con datos persistentes como S3 y DynamoDB.
+- `DeletionPolicy: Retain` en recursos con datos persistentes (S3 y DynamoDB).
+- `Export` en todos los Outputs para referencias cross-stack con `!ImportValue`.
+- Tags `Name`, `Environment` y `ManagedBy` en recursos principales.
+- `CreationPolicy` + `cfn-signal` en instancias con UserData complejo.
+- Flow Logs habilitados por defecto en VPC para auditoria de trafico.
+- Lifecycle rules en S3 para limpiar versiones antiguas automaticamente.
+- Sort key opcional en DynamoDB para soportar tablas de solo partition key.
+- DLQ SQS opcional en Lambda para capturar fallos de invocaciones asincronas.

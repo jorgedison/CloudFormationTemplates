@@ -10,19 +10,33 @@ Parameters:
   LogRetentionInDays:
     Type: Number
     Default: 14
-    AllowedValues:
-      - 1
-      - 3
-      - 5
-      - 7
-      - 14
-      - 30
-      - 60
-      - 90
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90]
     Description: Dias de retencion de logs en CloudWatch.
+  LambdaTimeout:
+    Type: Number
+    Default: 10
+    MinValue: 1
+    MaxValue: 900
+    Description: Tiempo maximo de ejecucion de la funcion Lambda en segundos.
+  LambdaMemorySize:
+    Type: Number
+    Default: 128
+    AllowedValues: [128, 256, 512, 1024, 2048, 3008]
+    Description: Memoria asignada a la funcion Lambda en MB.
+  EnableDlq:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Habilita una cola SQS como Dead Letter Queue para invocaciones asincronas de la funcion.
+  EnvironmentName:
+    Type: String
+    Default: lab
+    AllowedValues: [lab, dev, staging, prod]
+    Description: Ambiente de despliegue usado en los tags.
 
 Conditions:
   UseFunctionName: !Not [!Equals [!Ref FunctionName, '']]
+  HasDlq: !Equals [!Ref EnableDlq, 'true']
 
 Resources:
   LambdaExecutionRole:
@@ -49,8 +63,12 @@ Resources:
       Runtime: python3.12
       Handler: index.handler
       Role: !GetAtt LambdaExecutionRole.Arn
-      Timeout: 10
-      MemorySize: 128
+      Timeout: !Ref LambdaTimeout
+      MemorySize: !Ref LambdaMemorySize
+      DeadLetterConfig: !If
+        - HasDlq
+        - TargetArn: !GetAtt LambdaDeadLetterQueue.Arn
+        - !Ref AWS::NoValue
       TracingConfig:
         Mode: Active
       Code:
@@ -70,6 +88,23 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-function'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  LambdaDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Condition: HasDlq
+    Properties:
+      MessageRetentionPeriod: 1209600
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-dlq'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
 
   ApiFunctionLogGroup:
     Type: AWS::Logs::LogGroup
@@ -149,3 +184,9 @@ Outputs:
     Value: !Ref ApiFunction
     Export:
       Name: !Sub '${AWS::StackName}-FunctionName'
+  DeadLetterQueueUrl:
+    Condition: HasDlq
+    Description: URL de la cola SQS Dead Letter Queue.
+    Value: !Ref LambdaDeadLetterQueue
+    Export:
+      Name: !Sub '${AWS::StackName}-DlqUrl'

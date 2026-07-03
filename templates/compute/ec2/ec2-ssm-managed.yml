@@ -20,6 +20,11 @@ Parameters:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
     Description: AMI de Amazon Linux obtenida desde Parameter Store.
+  EnvironmentName:
+    Type: String
+    Default: lab
+    AllowedValues: [lab, dev, staging, prod]
+    Description: Ambiente de despliegue usado en los tags.
 
 Resources:
   InstanceRole:
@@ -68,6 +73,10 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-ec2'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
 
 Outputs:
   InstanceID:
