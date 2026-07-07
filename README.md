@@ -1,10 +1,12 @@
 # AWS CloudFormation Templates
 
-Repositorio de ejemplos CloudFormation organizados por dominio de AWS. Plantillas pequeñas, legibles y reutilizables para aprender y arrancar pruebas de infraestructura.
+Repositorio de ejemplos CloudFormation organizados por dominio de AWS. Las plantillas son pequenas, reutilizables y tienen controles basicos de seguridad, costo y operacion.
 
 ## Estructura
 
 ```text
+.github/workflows/
+  validate.yml
 templates/
   compute/
     ec2/
@@ -20,25 +22,27 @@ templates/
     s3/
 scripts/
   validate.sh
+Makefile
+requirements-dev.txt
 ```
 
 ## Catalogo
 
 | Categoria | Plantilla | Proposito |
 | --- | --- | --- |
-| Networking | `templates/networking/vpc/basic-vpc.yml` | VPC con dos subnets publicas, Internet Gateway, rutas y Flow Logs opcionales. |
-| Compute | `templates/compute/ec2/ec2-ssm-managed.yml` | EC2 administrable por SSM, sin SSH abierto. Tags de ambiente. |
-| Compute | `templates/compute/ec2/ec2-ssh-restricted.yml` | EC2 con SSH restringido por CIDR y KeyPair opcional. Tags de ambiente. |
-| Compute | `templates/compute/ec2/01-ec2-instance.yml` | Ejemplo basico de EC2. |
-| Compute | `templates/compute/ec2/02-ec2-elastic-ip.yml` | EC2 con Elastic IP. |
+| Networking | `templates/networking/vpc/basic-vpc.yml` | VPC con subnets publicas, subnets privadas opcionales, Flow Logs, NAT opcional y VPC endpoints opcionales. |
+| Compute | `templates/compute/ec2/ec2-ssm-managed.yml` | EC2 administrable por SSM, sin SSH abierto, IMDSv2 y volumen raiz gp3 cifrado. |
+| Compute | `templates/compute/ec2/ec2-ssh-restricted.yml` | EC2 con SSH restringido solo si se entrega `KeyName`. |
+| Compute | `templates/compute/ec2/01-ec2-instance.yml` | Ejemplo basico de EC2 sin reglas de entrada. |
+| Compute | `templates/compute/ec2/02-ec2-elastic-ip.yml` | EC2 con Elastic IP para practicas de red publica. |
 | Compute | `templates/compute/ec2/03-ec2-mappings.yml` | EC2 usando mappings por ambiente. |
-| Compute | `templates/compute/ec2/04-ec2-parameters.yml` | EC2 con parametros y SSH restringido. |
-| Compute | `templates/compute/ec2/05-ec2-elastic-ip-security-group.yml` | EC2 con Elastic IP y Security Group. |
-| Compute | `templates/compute/ec2/06-ec2-user-data-web.yml` | EC2 con Apache via UserData y señalizacion cfn-signal. |
-| Storage | `templates/storage/s3/private-bucket.yml` | Bucket S3 privado con cifrado, versionado, bloqueo publico y lifecycle de versiones. |
-| Database | `templates/database/dynamodb/on-demand-table.yml` | Tabla DynamoDB on-demand con PITR, cifrado y sort key opcional. |
-| Serverless | `templates/serverless/lambda-api/lambda-http-api.yml` | Lambda Python con API Gateway HTTP API, X-Ray, CORS, throttling y DLQ opcional. |
-| Monitoring | `templates/monitoring/cloudwatch/billing-alarm.yml` | Alarma de billing con notificacion SNS y periodo configurable. |
+| Compute | `templates/compute/ec2/04-ec2-parameters.yml` | EC2 parametrizada por ambiente y SSH opcional. |
+| Compute | `templates/compute/ec2/05-ec2-elastic-ip-security-group.yml` | EC2 con Elastic IP y SSH opcional. |
+| Compute | `templates/compute/ec2/06-ec2-user-data-web.yml` | EC2 con Apache via UserData, HTTP publico y SSH opcional. |
+| Storage | `templates/storage/s3/private-bucket.yml` | Bucket S3 privado con cifrado SSE-S3/SSE-KMS, versionado, TLS obligatorio y access logs opcionales. |
+| Database | `templates/database/dynamodb/on-demand-table.yml` | Tabla DynamoDB on-demand con PITR, cifrado, proteccion de borrado, TTL/Streams opcionales. |
+| Serverless | `templates/serverless/lambda-api/lambda-http-api.yml` | Lambda Python con HTTP API, X-Ray, CORS parametrizable, throttling, concurrencia reservada y DLQ opcional. |
+| Monitoring | `templates/monitoring/cloudwatch/billing-alarm.yml` | Alarma de billing con topico SNS cifrado y notificacion por email. |
 
 ## Despliegue
 
@@ -59,8 +63,22 @@ aws cloudformation describe-stacks \
   --query 'Stacks[0].Outputs'
 ```
 
-> **Nota:** `EnableFlowLogs=true` por defecto. Requiere `CAPABILITY_IAM` por el rol de Flow Logs.
-> Para desactivarlos: `--parameter-overrides EnableFlowLogs=false`
+Defaults relevantes:
+
+- `EnablePrivateSubnets=true`: crea dos subnets privadas sin IP publica automatica.
+- `EnableFlowLogs=true`: requiere `CAPABILITY_IAM` por el rol de Flow Logs.
+- `EnableNatGateway=false`: evita costo fijo por defecto.
+- `EnableVpcEndpoints=false`: evita costo de endpoints de interfaz por defecto.
+
+Para una instancia SSM en subnet privada sin NAT:
+
+```bash
+aws cloudformation deploy \
+  --stack-name lab-vpc \
+  --template-file templates/networking/vpc/basic-vpc.yml \
+  --capabilities CAPABILITY_IAM \
+  --parameter-overrides EnableVpcEndpoints=true
+```
 
 ### 2. Crear una EC2 administrable por SSM
 
@@ -75,7 +93,7 @@ aws cloudformation deploy \
     EnvironmentName=dev
 ```
 
-La subnet necesita salida a internet o VPC endpoints para SSM, SSM Messages y EC2 Messages.
+La subnet necesita salida a internet o endpoints para SSM, SSM Messages y EC2 Messages. Todas las EC2 declaran IMDSv2 obligatorio y volumen raiz `gp3` cifrado.
 
 ### 3. Crear un bucket S3 privado
 
@@ -86,7 +104,18 @@ aws cloudformation deploy \
   --parameter-overrides EnvironmentName=dev
 ```
 
-Las versiones antiguas expiran tras 90 dias por defecto (configurable con `NoncurrentVersionRetentionDays`).
+Con SSE-KMS:
+
+```bash
+aws cloudformation deploy \
+  --stack-name lab-s3-private-kms \
+  --template-file templates/storage/s3/private-bucket.yml \
+  --parameter-overrides \
+    EnvironmentName=dev \
+    EncryptionType=SSE-KMS
+```
+
+Las versiones antiguas expiran tras 90 dias por defecto. Para access logs, entrega `AccessLogBucketName` apuntando a un bucket destino ya preparado.
 
 ### 4. Crear una tabla DynamoDB
 
@@ -104,6 +133,8 @@ aws cloudformation deploy \
   --parameter-overrides EnableSortKey=false EnvironmentName=dev
 ```
 
+`EnableDeletionProtection=true` y `DeletionPolicy: Retain` estan activos por defecto para reducir borrados accidentales.
+
 ### 5. Crear una API serverless
 
 ```bash
@@ -114,7 +145,7 @@ aws cloudformation deploy \
   --parameter-overrides EnvironmentName=dev
 ```
 
-La DLQ SQS se crea por defecto (`EnableDlq=true`). Solo captura fallos de invocaciones asincronas.
+La DLQ SQS se crea por defecto (`EnableDlq=true`). Solo captura fallos de invocaciones asincronas. Para produccion, reemplaza `AllowedCorsOrigins=*` por dominios concretos.
 
 ### 6. Crear una alarma de billing
 
@@ -136,43 +167,49 @@ Despues del despliegue debes confirmar la suscripcion SNS desde el correo recibi
 ## Referencias cross-stack
 
 Todos los templates exportan sus outputs principales con el patron `${AWS::StackName}-<Recurso>`.
-Ejemplo para usar el VPC ID en otro stack:
 
 ```yaml
 VpcId: !ImportValue 'lab-vpc-VpcId'
-SubnetId: !ImportValue 'lab-vpc-PublicSubnetOneId'
+SubnetId: !ImportValue 'lab-vpc-PrivateSubnetOneId'
 ```
 
 ## Validacion
 
-Ejecuta:
+Instala herramientas de desarrollo y ejecuta la validacion:
+
+```bash
+make install-dev
+make validate
+```
+
+Tambien puedes ejecutar directamente:
 
 ```bash
 ./scripts/validate.sh
 ```
 
-El script valida las plantillas con PyYAML y, si estan instalados, ejecuta `cfn-lint` y `yamllint`.
+El script hace tres capas de validacion:
 
-Herramientas recomendadas:
+- Carga YAML con soporte para tags intrinsecos de CloudFormation.
+- Checks locales de politica: IMDSv2, EC2 gp3 cifrado, S3 privado, DynamoDB PITR/SSE/Retain, LogGroups con retencion, SQS/SNS cifrados.
+- `cfn-lint` y `yamllint` cuando estan instalados.
 
-```bash
-pip install cfn-lint yamllint
-```
+El workflow `.github/workflows/validate.yml` ejecuta la misma validacion en push y pull request.
 
-La configuracion de `cfn-lint` esta en `.cfnlintrc` (regiones, checks habilitados).
+## Criterios de diseno
 
-## Criterios de diseño
-
-- Plantillas pequeñas y enfocadas en un solo recurso o patron.
+- Plantillas pequenas y enfocadas en un recurso o patron.
 - Parametros para valores de cuenta, VPC, subnet, ambiente y nombres opcionales.
 - Sin AMIs hardcodeadas en EC2; se usa Parameter Store.
-- Sin SSH abierto a internet por defecto.
+- Sin SSH abierto por defecto; las reglas SSH solo se crean cuando hay `KeyName`.
+- EC2 con IMDSv2 obligatorio y volumen raiz `gp3` cifrado.
 - Recursos con cifrado o configuraciones seguras cuando aplica.
 - `DeletionPolicy: Retain` en recursos con datos persistentes (S3 y DynamoDB).
-- `Export` en todos los Outputs para referencias cross-stack con `!ImportValue`.
+- `Export` en outputs principales para referencias cross-stack con `!ImportValue`.
 - Tags `Name`, `Environment` y `ManagedBy` en recursos principales.
 - `CreationPolicy` + `cfn-signal` en instancias con UserData complejo.
 - Flow Logs habilitados por defecto en VPC para auditoria de trafico.
+- NAT Gateway y VPC endpoints deshabilitados por defecto para controlar costos.
 - Lifecycle rules en S3 para limpiar versiones antiguas automaticamente.
-- Sort key opcional en DynamoDB para soportar tablas de solo partition key.
-- DLQ SQS opcional en Lambda para capturar fallos de invocaciones asincronas.
+- Sort key, TTL y Streams opcionales en DynamoDB.
+- DLQ SQS cifrada y opcional en Lambda para fallos de invocaciones asincronas.

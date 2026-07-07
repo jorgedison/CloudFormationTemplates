@@ -6,7 +6,16 @@ Metadata:
     ParameterGroups:
       - Label:
           default: "Funcion Lambda"
-        Parameters: [FunctionName, LambdaTimeout, LambdaMemorySize, LambdaArchitecture, EnvironmentName]
+        Parameters:
+          - FunctionName
+          - LambdaTimeout
+          - LambdaMemorySize
+          - LambdaArchitecture
+          - ReservedConcurrentExecutions
+          - EnvironmentName
+      - Label:
+          default: "API"
+        Parameters: [AllowedCorsOrigins]
       - Label:
           default: "Logging"
         Parameters: [LogRetentionInDays]
@@ -22,8 +31,12 @@ Metadata:
         default: "Memoria (MB)"
       LambdaArchitecture:
         default: "Arquitectura"
+      ReservedConcurrentExecutions:
+        default: "Concurrencia reservada"
       EnvironmentName:
         default: "Ambiente"
+      AllowedCorsOrigins:
+        default: "Origenes CORS permitidos"
       LogRetentionInDays:
         default: "Retencion de logs (dias)"
       EnableDlq:
@@ -51,6 +64,12 @@ Parameters:
     Default: 128
     AllowedValues: [128, 256, 512, 1024, 2048, 3008]
     Description: Memoria asignada a la funcion Lambda en MB.
+  ReservedConcurrentExecutions:
+    Type: Number
+    Default: 10
+    MinValue: 0
+    MaxValue: 1000
+    Description: Limite de concurrencia reservada para controlar impacto y costo.
   EnableDlq:
     Type: String
     Default: 'true'
@@ -60,7 +79,11 @@ Parameters:
     Type: String
     Default: arm64
     AllowedValues: [x86_64, arm64]
-    Description: Arquitectura de la funcion. arm64 (Graviton2) es ~20% mas barato con igual o mejor rendimiento.
+    Description: Arquitectura de la funcion. arm64 suele reducir costo con buen rendimiento.
+  AllowedCorsOrigins:
+    Type: CommaDelimitedList
+    Default: '*'
+    Description: Lista separada por comas de origenes permitidos por CORS. Usa dominios concretos en produccion.
   EnvironmentName:
     Type: String
     Default: lab
@@ -88,6 +111,10 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-lambda-role'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
 
   ApiFunction:
     Type: AWS::Lambda::Function
@@ -100,6 +127,10 @@ Resources:
         - !Ref LambdaArchitecture
       Timeout: !Ref LambdaTimeout
       MemorySize: !Ref LambdaMemorySize
+      ReservedConcurrentExecutions: !Ref ReservedConcurrentExecutions
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref EnvironmentName
       DeadLetterConfig: !If
         - HasDlq
         - TargetArn: !GetAtt LambdaDeadLetterQueue.Arn
@@ -133,6 +164,7 @@ Resources:
     Condition: HasDlq
     Properties:
       MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-dlq'
@@ -146,12 +178,26 @@ Resources:
     Properties:
       LogGroupName: !Sub '/aws/lambda/${ApiFunction}'
       RetentionInDays: !Ref LogRetentionInDays
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-lambda-logs'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
 
   ApiAccessLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub '/aws/apigateway/${AWS::StackName}-access-logs'
       RetentionInDays: !Ref LogRetentionInDays
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-api-access-logs'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
 
   HttpApi:
     Type: AWS::ApiGatewayV2::Api
@@ -165,10 +211,11 @@ Resources:
         AllowMethods:
           - GET
           - OPTIONS
-        AllowOrigins:
-          - '*'
+        AllowOrigins: !Ref AllowedCorsOrigins
       Tags:
         Name: !Sub '${AWS::StackName}-http-api'
+        Environment: !Ref EnvironmentName
+        ManagedBy: CloudFormation
 
   LambdaIntegration:
     Type: AWS::ApiGatewayV2::Integration
@@ -193,12 +240,18 @@ Resources:
       AutoDeploy: true
       AccessLogSettings:
         DestinationArn: !GetAtt ApiAccessLogGroup.Arn
-        Format: '{"requestId":"$context.requestId","ip":"$context.identity.sourceIp","requestTime":"$context.requestTime","httpMethod":"$context.httpMethod","routeKey":"$context.routeKey","status":"$context.status","responseLength":"$context.responseLength","integrationLatency":"$context.integrationLatency"}'
+        Format: >-
+          {"requestId":"$context.requestId","ip":"$context.identity.sourceIp",
+          "requestTime":"$context.requestTime","httpMethod":"$context.httpMethod",
+          "routeKey":"$context.routeKey","status":"$context.status",
+          "responseLength":"$context.responseLength","integrationLatency":"$context.integrationLatency"}
       DefaultRouteSettings:
         ThrottlingBurstLimit: 100
         ThrottlingRateLimit: 50
       Tags:
         Name: !Sub '${AWS::StackName}-default-stage'
+        Environment: !Ref EnvironmentName
+        ManagedBy: CloudFormation
 
   LambdaInvokePermission:
     Type: AWS::Lambda::Permission
@@ -206,7 +259,7 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !Ref ApiFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*'
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/GET/'
 
 Outputs:
   ApiEndpoint:

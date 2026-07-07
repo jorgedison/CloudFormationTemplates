@@ -1,6 +1,5 @@
-# Nombre conservado del laboratorio original; esta version esta corregida.
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Plantilla corregida para crear una instancia EC2 con SSH restringido.
+Description: Plantilla corregida para crear una instancia EC2 con SSH restringido opcional.
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -10,7 +9,7 @@ Metadata:
         Parameters: [VpcId, SubnetId]
       - Label:
           default: "Instancia"
-        Parameters: [InstanceType, LatestAmiId]
+        Parameters: [InstanceType, LatestAmiId, RootVolumeSize]
       - Label:
           default: "Acceso SSH"
         Parameters: [AllowedSshCidr, KeyName]
@@ -26,6 +25,8 @@ Metadata:
         default: "Tipo de instancia"
       LatestAmiId:
         default: "AMI (SSM Parameter Store)"
+      RootVolumeSize:
+        default: "Tamano del volumen raiz (GiB)"
       AllowedSshCidr:
         default: "CIDR permitido para SSH"
       KeyName:
@@ -41,9 +42,10 @@ Parameters:
     Type: AWS::EC2::Subnet::Id
     Description: Subnet donde se lanzara la instancia EC2.
   KeyName:
-    Description: Nombre opcional de un SSH KeyPair existente.
     Type: String
     Default: ''
+    AllowedPattern: '^$|[A-Za-z0-9._/@+=,-]+$'
+    Description: Nombre opcional de un SSH KeyPair existente. Si se omite, no se abre SSH.
   InstanceType:
     Type: String
     Default: t3.micro
@@ -56,11 +58,17 @@ Parameters:
     Default: 203.0.113.10/32
     AllowedPattern: '^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$'
     ConstraintDescription: Ingresa un CIDR IPv4 valido, por ejemplo 203.0.113.10/32.
-    Description: CIDR permitido para SSH. Reemplaza el valor por tu IP publica /32.
+    Description: CIDR permitido para SSH. Solo se usa cuando KeyName no esta vacio.
   LatestAmiId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
     Description: AMI de Amazon Linux obtenida desde Parameter Store.
+  RootVolumeSize:
+    Type: Number
+    Default: 8
+    MinValue: 8
+    MaxValue: 1024
+    Description: Tamano en GiB del volumen raiz gp3 cifrado.
   EnvironmentName:
     Type: String
     Default: lab
@@ -83,6 +91,13 @@ Resources:
       MetadataOptions:
         HttpEndpoint: enabled
         HttpTokens: required
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            DeleteOnTermination: true
+            Encrypted: true
+            VolumeSize: !Ref RootVolumeSize
+            VolumeType: gp3
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-ec2'
@@ -94,16 +109,22 @@ Resources:
   InstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Acceso SSH restringido
+      GroupDescription: Acceso SSH restringido opcional
       VpcId: !Ref VpcId
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: !Ref AllowedSshCidr
+      SecurityGroupIngress: !If
+        - UseKeyPair
+        - - IpProtocol: tcp
+            FromPort: 22
+            ToPort: 22
+            CidrIp: !Ref AllowedSshCidr
+        - !Ref AWS::NoValue
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-sg'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
 
 Outputs:
   InstanceID:

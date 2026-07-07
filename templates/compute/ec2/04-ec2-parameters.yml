@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Crea una instancia EC2 parametrizada por ambiente y acceso SSH restringido.
+Description: Crea una instancia EC2 parametrizada por ambiente y acceso SSH restringido opcional.
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -9,10 +9,10 @@ Metadata:
         Parameters: [VpcId, SubnetId]
       - Label:
           default: "Instancia"
-        Parameters: [EnvironmentParameter, LatestAmiId]
+        Parameters: [EnvironmentParameter, LatestAmiId, RootVolumeSize]
       - Label:
           default: "Seguridad"
-        Parameters: [AllowedSshCidr]
+        Parameters: [AllowedSshCidr, KeyName]
     ParameterLabels:
       VpcId:
         default: "ID de la VPC"
@@ -22,8 +22,12 @@ Metadata:
         default: "Ambiente"
       LatestAmiId:
         default: "AMI (SSM Parameter Store)"
+      RootVolumeSize:
+        default: "Tamano del volumen raiz (GiB)"
       AllowedSshCidr:
         default: "CIDR permitido para SSH"
+      KeyName:
+        default: "Nombre del KeyPair"
 
 Mappings:
   EnvironmentMap:
@@ -51,41 +55,73 @@ Parameters:
     Default: 203.0.113.10/32
     AllowedPattern: '^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$'
     ConstraintDescription: Ingresa un CIDR IPv4 valido, por ejemplo 203.0.113.10/32.
-    Description: CIDR permitido para SSH. Reemplaza el valor por tu IP publica /32.
+    Description: CIDR permitido para SSH. Solo se usa cuando KeyName no esta vacio.
+  KeyName:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|[A-Za-z0-9._/@+=,-]+$'
+    Description: Nombre opcional de un SSH KeyPair existente. Si se omite, no se abre SSH.
   LatestAmiId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
     Description: AMI de Amazon Linux obtenida desde Parameter Store.
+  RootVolumeSize:
+    Type: Number
+    Default: 8
+    MinValue: 8
+    MaxValue: 1024
+    Description: Tamano en GiB del volumen raiz gp3 cifrado.
+
+Conditions:
+  UseKeyPair: !Not [!Equals [!Ref KeyName, '']]
 
 Resources:
   InstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Acceso SSH restringido
+      GroupDescription: Acceso SSH restringido opcional
       VpcId: !Ref VpcId
-      SecurityGroupIngress:
-        - CidrIp: !Ref AllowedSshCidr
-          FromPort: 22
-          IpProtocol: tcp
-          ToPort: 22
+      SecurityGroupIngress: !If
+        - UseKeyPair
+        - - CidrIp: !Ref AllowedSshCidr
+            FromPort: 22
+            IpProtocol: tcp
+            ToPort: 22
+        - !Ref AWS::NoValue
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-sg'
+        - Key: Environment
+          Value: !Ref EnvironmentParameter
+        - Key: ManagedBy
+          Value: CloudFormation
 
   MyEC2Instance:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: !Ref LatestAmiId
       InstanceType: !FindInMap [EnvironmentMap, !Ref EnvironmentParameter, InstanceType]
+      KeyName: !If [UseKeyPair, !Ref KeyName, !Ref AWS::NoValue]
       SubnetId: !Ref SubnetId
       SecurityGroupIds:
         - !Ref InstanceSecurityGroup
       MetadataOptions:
         HttpEndpoint: enabled
         HttpTokens: required
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            DeleteOnTermination: true
+            Encrypted: true
+            VolumeSize: !Ref RootVolumeSize
+            VolumeType: gp3
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-${EnvironmentParameter}-ec2'
+        - Key: Environment
+          Value: !Ref EnvironmentParameter
+        - Key: ManagedBy
+          Value: CloudFormation
 
 Outputs:
   InstanceID:

@@ -1,12 +1,21 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Crea una VPC basica con dos subnets publicas y salida a internet.
+Description: Crea una VPC base con subnets publicas, subnets privadas opcionales, Flow Logs y endpoints opcionales.
 
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label:
           default: "Direccionamiento IP"
-        Parameters: [VpcCidr, PublicSubnetOneCidr, PublicSubnetTwoCidr]
+        Parameters:
+          - VpcCidr
+          - PublicSubnetOneCidr
+          - PublicSubnetTwoCidr
+          - EnablePrivateSubnets
+          - PrivateSubnetOneCidr
+          - PrivateSubnetTwoCidr
+      - Label:
+          default: "Conectividad"
+        Parameters: [EnableNatGateway, EnableVpcEndpoints]
       - Label:
           default: "Observabilidad"
         Parameters: [EnableFlowLogs, FlowLogRetentionInDays]
@@ -20,6 +29,16 @@ Metadata:
         default: "CIDR Subnet Publica 1 (AZ-a)"
       PublicSubnetTwoCidr:
         default: "CIDR Subnet Publica 2 (AZ-b)"
+      EnablePrivateSubnets:
+        default: "Crear subnets privadas"
+      PrivateSubnetOneCidr:
+        default: "CIDR Subnet Privada 1 (AZ-a)"
+      PrivateSubnetTwoCidr:
+        default: "CIDR Subnet Privada 2 (AZ-b)"
+      EnableNatGateway:
+        default: "Crear NAT Gateway"
+      EnableVpcEndpoints:
+        default: "Crear VPC Endpoints"
       EnableFlowLogs:
         default: "Habilitar VPC Flow Logs"
       FlowLogRetentionInDays:
@@ -43,6 +62,31 @@ Parameters:
     Default: 10.0.1.0/24
     AllowedPattern: '^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$'
     Description: CIDR IPv4 para la segunda subnet publica.
+  EnablePrivateSubnets:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Crea dos subnets privadas sin IP publica automatica.
+  PrivateSubnetOneCidr:
+    Type: String
+    Default: 10.0.10.0/24
+    AllowedPattern: '^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$'
+    Description: CIDR IPv4 para la primera subnet privada.
+  PrivateSubnetTwoCidr:
+    Type: String
+    Default: 10.0.11.0/24
+    AllowedPattern: '^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$'
+    Description: CIDR IPv4 para la segunda subnet privada.
+  EnableNatGateway:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Crea un NAT Gateway para salida a internet desde subnets privadas. Tiene costo por hora y por GB.
+  EnableVpcEndpoints:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Crea endpoints para SSM, EC2 Messages, SSM Messages, CloudWatch Logs, S3 y DynamoDB.
   EnableFlowLogs:
     Type: String
     Default: 'true'
@@ -60,6 +104,11 @@ Parameters:
     Description: Ambiente de despliegue usado en los tags.
 
 Conditions:
+  CreatePrivateSubnets: !Equals [!Ref EnablePrivateSubnets, 'true']
+  CreateNatGateway: !And
+    - !Condition CreatePrivateSubnets
+    - !Equals [!Ref EnableNatGateway, 'true']
+  CreateVpcEndpoints: !Equals [!Ref EnableVpcEndpoints, 'true']
   EnableFlowLogsCondition: !Equals [!Ref EnableFlowLogs, 'true']
 
 Resources:
@@ -83,6 +132,10 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-igw'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
 
   InternetGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
@@ -100,6 +153,10 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-public-a'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
 
   PublicSubnetTwo:
     Type: AWS::EC2::Subnet
@@ -111,6 +168,42 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-public-b'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  PrivateSubnetOne:
+    Type: AWS::EC2::Subnet
+    Condition: CreatePrivateSubnets
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PrivateSubnetOneCidr
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-private-a'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  PrivateSubnetTwo:
+    Type: AWS::EC2::Subnet
+    Condition: CreatePrivateSubnets
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Ref PrivateSubnetTwoCidr
+      MapPublicIpOnLaunch: false
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-private-b'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
 
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
@@ -119,6 +212,10 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-public-rt'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
 
   DefaultPublicRoute:
     Type: AWS::EC2::Route
@@ -140,12 +237,82 @@ Resources:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref PublicSubnetTwo
 
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Condition: CreatePrivateSubnets
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-private-rt'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  PrivateSubnetOneRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreatePrivateSubnets
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetOne
+
+  PrivateSubnetTwoRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreatePrivateSubnets
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetTwo
+
+  NatGatewayElasticIp:
+    Type: AWS::EC2::EIP
+    Condition: CreateNatGateway
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-nat-eip'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Condition: CreateNatGateway
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      AllocationId: !GetAtt NatGatewayElasticIp.AllocationId
+      SubnetId: !Ref PublicSubnetOne
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-nat'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  PrivateDefaultRoute:
+    Type: AWS::EC2::Route
+    Condition: CreateNatGateway
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+      RouteTableId: !Ref PrivateRouteTable
+
   FlowLogGroup:
     Type: AWS::Logs::LogGroup
     Condition: EnableFlowLogsCondition
     Properties:
       LogGroupName: !Sub '/aws/vpc/flowlogs/${AWS::StackName}'
       RetentionInDays: !Ref FlowLogRetentionInDays
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-flowlogs'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
 
   FlowLogRole:
     Type: AWS::IAM::Role
@@ -167,12 +334,16 @@ Resources:
                 Action:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
-                  - logs:DescribeLogGroups
                   - logs:DescribeLogStreams
-                Resource: !GetAtt FlowLogGroup.Arn
+                Resource: !Sub '${FlowLogGroup.Arn}:*'
+              - Effect: Allow
+                Action: logs:DescribeLogGroups
+                Resource: '*'
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-flowlog-role'
+        - Key: Environment
+          Value: !Ref EnvironmentName
         - Key: ManagedBy
           Value: CloudFormation
 
@@ -181,6 +352,7 @@ Resources:
     Condition: EnableFlowLogsCondition
     Properties:
       DeliverLogsPermissionArn: !GetAtt FlowLogRole.Arn
+      LogDestinationType: cloud-watch-logs
       LogGroupName: !Ref FlowLogGroup
       ResourceId: !Ref VPC
       ResourceType: VPC
@@ -188,8 +360,151 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-flow-log'
+        - Key: Environment
+          Value: !Ref EnvironmentName
         - Key: ManagedBy
           Value: CloudFormation
+
+  VpcEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: CreateVpcEndpoints
+    Properties:
+      GroupDescription: Permite HTTPS desde la VPC hacia endpoints de interfaz.
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - CidrIp: !Ref VpcCidr
+          FromPort: 443
+          IpProtocol: tcp
+          ToPort: 443
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-vpce-sg'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  SsmEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreateVpcEndpoints
+    Properties:
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ssm'
+      SubnetIds: !If
+        - CreatePrivateSubnets
+        - - !Ref PrivateSubnetOne
+          - !Ref PrivateSubnetTwo
+        - - !Ref PublicSubnetOne
+          - !Ref PublicSubnetTwo
+      VpcEndpointType: Interface
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-ssm-vpce'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  SsmMessagesEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreateVpcEndpoints
+    Properties:
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ssmmessages'
+      SubnetIds: !If
+        - CreatePrivateSubnets
+        - - !Ref PrivateSubnetOne
+          - !Ref PrivateSubnetTwo
+        - - !Ref PublicSubnetOne
+          - !Ref PublicSubnetTwo
+      VpcEndpointType: Interface
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-ssmmessages-vpce'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  Ec2MessagesEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreateVpcEndpoints
+    Properties:
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ec2messages'
+      SubnetIds: !If
+        - CreatePrivateSubnets
+        - - !Ref PrivateSubnetOne
+          - !Ref PrivateSubnetTwo
+        - - !Ref PublicSubnetOne
+          - !Ref PublicSubnetTwo
+      VpcEndpointType: Interface
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-ec2messages-vpce'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  LogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreateVpcEndpoints
+    Properties:
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref VpcEndpointSecurityGroup
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.logs'
+      SubnetIds: !If
+        - CreatePrivateSubnets
+        - - !Ref PrivateSubnetOne
+          - !Ref PrivateSubnetTwo
+        - - !Ref PublicSubnetOne
+          - !Ref PublicSubnetTwo
+      VpcEndpointType: Interface
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-logs-vpce'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  S3GatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreateVpcEndpoints
+    Properties:
+      RouteTableIds: !If
+        - CreatePrivateSubnets
+        - - !Ref PublicRouteTable
+          - !Ref PrivateRouteTable
+        - - !Ref PublicRouteTable
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcEndpointType: Gateway
+      VpcId: !Ref VPC
+
+  DynamoDbGatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreateVpcEndpoints
+    Properties:
+      RouteTableIds: !If
+        - CreatePrivateSubnets
+        - - !Ref PublicRouteTable
+          - !Ref PrivateRouteTable
+        - - !Ref PublicRouteTable
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.dynamodb'
+      VpcEndpointType: Gateway
+      VpcId: !Ref VPC
 
 Outputs:
   VpcId:
@@ -207,9 +522,44 @@ Outputs:
     Value: !Ref PublicSubnetTwo
     Export:
       Name: !Sub '${AWS::StackName}-PublicSubnetTwoId'
+  PrivateSubnetOneId:
+    Condition: CreatePrivateSubnets
+    Description: ID de la primera subnet privada.
+    Value: !Ref PrivateSubnetOne
+    Export:
+      Name: !Sub '${AWS::StackName}-PrivateSubnetOneId'
+  PrivateSubnetTwoId:
+    Condition: CreatePrivateSubnets
+    Description: ID de la segunda subnet privada.
+    Value: !Ref PrivateSubnetTwo
+    Export:
+      Name: !Sub '${AWS::StackName}-PrivateSubnetTwoId'
+  PublicRouteTableId:
+    Description: ID de la route table publica.
+    Value: !Ref PublicRouteTable
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicRouteTableId'
+  PrivateRouteTableId:
+    Condition: CreatePrivateSubnets
+    Description: ID de la route table privada.
+    Value: !Ref PrivateRouteTable
+    Export:
+      Name: !Sub '${AWS::StackName}-PrivateRouteTableId'
   FlowLogGroupName:
     Condition: EnableFlowLogsCondition
     Description: Nombre del log group de VPC Flow Logs en CloudWatch.
     Value: !Ref FlowLogGroup
     Export:
       Name: !Sub '${AWS::StackName}-FlowLogGroupName'
+  VpcEndpointSecurityGroupId:
+    Condition: CreateVpcEndpoints
+    Description: ID del security group usado por endpoints de interfaz.
+    Value: !Ref VpcEndpointSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-VpcEndpointSecurityGroupId'
+  NatGatewayId:
+    Condition: CreateNatGateway
+    Description: ID del NAT Gateway, si fue creado.
+    Value: !Ref NatGateway
+    Export:
+      Name: !Sub '${AWS::StackName}-NatGatewayId'

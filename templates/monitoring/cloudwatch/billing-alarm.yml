@@ -6,7 +6,7 @@ Metadata:
     ParameterGroups:
       - Label:
           default: "Notificacion"
-        Parameters: [AlarmEmail]
+        Parameters: [AlarmEmail, SnsKmsMasterKeyId]
       - Label:
           default: "Umbral y periodo"
         Parameters: [MonthlyThresholdUsd, AlarmPeriodSeconds]
@@ -16,6 +16,8 @@ Metadata:
     ParameterLabels:
       AlarmEmail:
         default: "Email para notificaciones SNS"
+      SnsKmsMasterKeyId:
+        default: "Clave KMS para SNS"
       MonthlyThresholdUsd:
         default: "Umbral mensual (USD)"
       AlarmPeriodSeconds:
@@ -28,6 +30,10 @@ Parameters:
     Type: String
     AllowedPattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$'
     Description: Email que recibira la confirmacion de suscripcion SNS.
+  SnsKmsMasterKeyId:
+    Type: String
+    Default: alias/aws/sns
+    Description: Clave KMS usada para cifrar el topico SNS.
   MonthlyThresholdUsd:
     Type: Number
     Default: 10
@@ -49,6 +55,7 @@ Resources:
     Type: AWS::SNS::Topic
     Properties:
       DisplayName: !Sub '${AWS::StackName} billing alarm'
+      KmsMasterKeyId: !Ref SnsKmsMasterKeyId
       TopicName: !Sub '${AWS::StackName}-billing-alarm'
       Tags:
         - Key: Name

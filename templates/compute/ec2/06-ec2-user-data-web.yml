@@ -9,10 +9,13 @@ Metadata:
         Parameters: [VpcId, SubnetId]
       - Label:
           default: "Instancia"
-        Parameters: [InstanceType, LatestAmiId]
+        Parameters: [InstanceType, LatestAmiId, RootVolumeSize]
       - Label:
           default: "Seguridad"
-        Parameters: [AllowedSshCidr, AllowedHttpCidr]
+        Parameters: [AllowedHttpCidr, AllowedSshCidr, KeyName]
+      - Label:
+          default: "Configuracion"
+        Parameters: [EnvironmentName]
     ParameterLabels:
       VpcId:
         default: "ID de la VPC"
@@ -22,10 +25,16 @@ Metadata:
         default: "Tipo de instancia"
       LatestAmiId:
         default: "AMI (SSM Parameter Store)"
+      RootVolumeSize:
+        default: "Tamano del volumen raiz (GiB)"
       AllowedSshCidr:
         default: "CIDR permitido para SSH"
       AllowedHttpCidr:
         default: "CIDR permitido para HTTP"
+      KeyName:
+        default: "Nombre del KeyPair"
+      EnvironmentName:
+        default: "Ambiente"
 
 Parameters:
   VpcId:
@@ -52,30 +61,56 @@ Parameters:
     Default: 203.0.113.10/32
     AllowedPattern: '^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$'
     ConstraintDescription: Ingresa un CIDR IPv4 valido, por ejemplo 203.0.113.10/32.
-    Description: CIDR permitido para SSH. Reemplaza el valor por tu IP publica /32 si necesitas acceso.
+    Description: CIDR permitido para SSH. Solo se usa cuando KeyName no esta vacio.
+  KeyName:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|[A-Za-z0-9._/@+=,-]+$'
+    Description: Nombre opcional de un SSH KeyPair existente. Si se omite, no se abre SSH.
   LatestAmiId:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
     Description: AMI de Amazon Linux obtenida desde Parameter Store.
+  RootVolumeSize:
+    Type: Number
+    Default: 8
+    MinValue: 8
+    MaxValue: 1024
+    Description: Tamano en GiB del volumen raiz gp3 cifrado.
+  EnvironmentName:
+    Type: String
+    Default: lab
+    AllowedValues: [lab, dev, staging, prod]
+    Description: Ambiente de despliegue usado en los tags.
+
+Conditions:
+  UseKeyPair: !Not [!Equals [!Ref KeyName, '']]
 
 Resources:
   MySecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Acceso HTTP publico y SSH restringido
+      GroupDescription: Acceso HTTP y SSH restringido opcional
       VpcId: !Ref VpcId
       SecurityGroupIngress:
         - CidrIp: !Ref AllowedHttpCidr
           FromPort: 80
           IpProtocol: tcp
           ToPort: 80
-        - CidrIp: !Ref AllowedSshCidr
-          FromPort: 22
-          IpProtocol: tcp
-          ToPort: 22
+        - !If
+          - UseKeyPair
+          - CidrIp: !Ref AllowedSshCidr
+            FromPort: 22
+            IpProtocol: tcp
+            ToPort: 22
+          - !Ref AWS::NoValue
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-sg'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
 
   MyEC2Instance:
     Type: AWS::EC2::Instance
@@ -85,12 +120,20 @@ Resources:
     Properties:
       ImageId: !Ref LatestAmiId
       InstanceType: !Ref InstanceType
+      KeyName: !If [UseKeyPair, !Ref KeyName, !Ref AWS::NoValue]
       SubnetId: !Ref SubnetId
       SecurityGroupIds:
         - !Ref MySecurityGroup
       MetadataOptions:
         HttpEndpoint: enabled
         HttpTokens: required
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            DeleteOnTermination: true
+            Encrypted: true
+            VolumeSize: !Ref RootVolumeSize
+            VolumeType: gp3
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
@@ -106,6 +149,10 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-web'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
 
   MyEIP:
     Type: AWS::EC2::EIP
@@ -114,6 +161,10 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-eip'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
 
   MyEIPAssociation:
     Type: AWS::EC2::EIPAssociation

@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Crea una tabla DynamoDB on-demand con cifrado y point-in-time recovery.
+Description: Crea una tabla DynamoDB on-demand con cifrado, PITR y controles opcionales de operacion.
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -13,6 +13,15 @@ Metadata:
       - Label:
           default: "Sort Key"
         Parameters: [EnableSortKey, SortKeyName, SortKeyType]
+      - Label:
+          default: "Proteccion y operacion"
+        Parameters:
+          - EnableDeletionProtection
+          - EnableTimeToLive
+          - TtlAttributeName
+          - EnableStreams
+          - StreamViewType
+          - EnableContributorInsights
     ParameterLabels:
       TableName:
         default: "Nombre de la tabla"
@@ -28,6 +37,18 @@ Metadata:
         default: "Nombre de la sort key"
       SortKeyType:
         default: "Tipo de la sort key"
+      EnableDeletionProtection:
+        default: "Proteccion contra borrado"
+      EnableTimeToLive:
+        default: "Habilitar TTL"
+      TtlAttributeName:
+        default: "Atributo TTL"
+      EnableStreams:
+        default: "Habilitar DynamoDB Streams"
+      StreamViewType:
+        default: "Vista del stream"
+      EnableContributorInsights:
+        default: "Contributor Insights"
 
 Parameters:
   TableName:
@@ -60,6 +81,36 @@ Parameters:
     Default: 'true'
     AllowedValues: ['true', 'false']
     Description: Incluye una sort key (RANGE) en la tabla. Desactivalo para tablas de solo partition key.
+  EnableDeletionProtection:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Evita borrados accidentales de la tabla desde DynamoDB.
+  EnableTimeToLive:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Habilita expiracion automatica de items mediante un atributo epoch timestamp.
+  TtlAttributeName:
+    Type: String
+    Default: ttl
+    AllowedPattern: '^[A-Za-z][A-Za-z0-9_]*$'
+    Description: Nombre del atributo TTL cuando EnableTimeToLive=true.
+  EnableStreams:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Habilita DynamoDB Streams para integraciones event-driven.
+  StreamViewType:
+    Type: String
+    Default: NEW_AND_OLD_IMAGES
+    AllowedValues: [KEYS_ONLY, NEW_IMAGE, OLD_IMAGE, NEW_AND_OLD_IMAGES]
+    Description: Tipo de informacion expuesta en DynamoDB Streams.
+  EnableContributorInsights:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Habilita Contributor Insights para diagnostico de patrones de acceso.
   EnvironmentName:
     Type: String
     Default: lab
@@ -69,6 +120,9 @@ Parameters:
 Conditions:
   UseTableName: !Not [!Equals [!Ref TableName, '']]
   HasSortKey: !Equals [!Ref EnableSortKey, 'true']
+  HasTimeToLive: !Equals [!Ref EnableTimeToLive, 'true']
+  HasStreams: !Equals [!Ref EnableStreams, 'true']
+  HasContributorInsights: !Equals [!Ref EnableContributorInsights, 'true']
 
 Resources:
   AppTable:
@@ -94,10 +148,24 @@ Resources:
           - AttributeName: !Ref SortKeyName
             KeyType: RANGE
           - !Ref AWS::NoValue
+      DeletionProtectionEnabled: !Ref EnableDeletionProtection
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
       SSESpecification:
         SSEEnabled: true
+      TimeToLiveSpecification: !If
+        - HasTimeToLive
+        - AttributeName: !Ref TtlAttributeName
+          Enabled: true
+        - !Ref AWS::NoValue
+      StreamSpecification: !If
+        - HasStreams
+        - StreamViewType: !Ref StreamViewType
+        - !Ref AWS::NoValue
+      ContributorInsightsSpecification: !If
+        - HasContributorInsights
+        - Enabled: true
+        - !Ref AWS::NoValue
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-table'
@@ -117,3 +185,9 @@ Outputs:
     Value: !GetAtt AppTable.Arn
     Export:
       Name: !Sub '${AWS::StackName}-TableArn'
+  StreamArn:
+    Condition: HasStreams
+    Description: ARN del stream de DynamoDB.
+    Value: !GetAtt AppTable.StreamArn
+    Export:
+      Name: !Sub '${AWS::StackName}-StreamArn'

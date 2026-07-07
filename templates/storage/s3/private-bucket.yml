@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Crea un bucket S3 privado con cifrado, versionado y bloqueo de acceso publico.
+Description: Crea un bucket S3 privado con cifrado, versionado, bloqueo publico y controles opcionales de auditoria.
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -8,17 +8,31 @@ Metadata:
           default: "Identificacion"
         Parameters: [BucketName, EnvironmentName]
       - Label:
+          default: "Cifrado"
+        Parameters: [EncryptionType, KmsKeyArn]
+      - Label:
           default: "Versionado y ciclo de vida"
         Parameters: [EnableVersioning, NoncurrentVersionRetentionDays]
+      - Label:
+          default: "Auditoria"
+        Parameters: [AccessLogBucketName, AccessLogPrefix]
     ParameterLabels:
       BucketName:
         default: "Nombre del bucket"
       EnvironmentName:
         default: "Ambiente"
+      EncryptionType:
+        default: "Tipo de cifrado"
+      KmsKeyArn:
+        default: "ARN de KMS opcional"
       EnableVersioning:
         default: "Versionado"
       NoncurrentVersionRetentionDays:
         default: "Retencion de versiones antiguas (dias)"
+      AccessLogBucketName:
+        default: "Bucket destino para access logs"
+      AccessLogPrefix:
+        default: "Prefijo para access logs"
 
 Parameters:
   BucketName:
@@ -26,6 +40,15 @@ Parameters:
     Default: ''
     AllowedPattern: '^$|^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$'
     Description: Nombre opcional del bucket. Dejalo vacio para que CloudFormation genere uno.
+  EncryptionType:
+    Type: String
+    Default: SSE-S3
+    AllowedValues: [SSE-S3, SSE-KMS]
+    Description: Usa SSE-S3 por defecto o SSE-KMS para cargas con mayor control de claves.
+  KmsKeyArn:
+    Type: String
+    Default: ''
+    Description: ARN opcional de una CMK KMS. Si se omite con SSE-KMS, S3 usa la clave administrada de AWS.
   EnableVersioning:
     Type: String
     Default: Enabled
@@ -38,6 +61,15 @@ Parameters:
     Default: 90
     MinValue: 1
     Description: Dias que se retienen versiones antiguas antes de eliminarlas (solo aplica con versionado habilitado).
+  AccessLogBucketName:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$'
+    Description: Bucket destino opcional para server access logs. Debe existir y permitir escritura de logs de S3.
+  AccessLogPrefix:
+    Type: String
+    Default: s3-access-logs/
+    Description: Prefijo usado cuando AccessLogBucketName esta configurado.
   EnvironmentName:
     Type: String
     Default: lab
@@ -46,7 +78,12 @@ Parameters:
 
 Conditions:
   UseBucketName: !Not [!Equals [!Ref BucketName, '']]
-  VersioningEnabled: !Equals [!Ref EnableVersioning, 'Enabled']
+  VersioningEnabled: !Equals [!Ref EnableVersioning, Enabled]
+  UseKmsEncryption: !Equals [!Ref EncryptionType, SSE-KMS]
+  UseCustomerKmsKey: !And
+    - !Condition UseKmsEncryption
+    - !Not [!Equals [!Ref KmsKeyArn, '']]
+  UseAccessLogging: !Not [!Equals [!Ref AccessLogBucketName, '']]
 
 Resources:
   PrivateBucket:
@@ -58,7 +95,14 @@ Resources:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
+              SSEAlgorithm: !If [UseKmsEncryption, 'aws:kms', AES256]
+              KMSMasterKeyID: !If [UseCustomerKmsKey, !Ref KmsKeyArn, !Ref AWS::NoValue]
+            BucketKeyEnabled: !If [UseKmsEncryption, true, !Ref AWS::NoValue]
+      LoggingConfiguration: !If
+        - UseAccessLogging
+        - DestinationBucketName: !Ref AccessLogBucketName
+          LogFilePrefix: !Ref AccessLogPrefix
+        - !Ref AWS::NoValue
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced

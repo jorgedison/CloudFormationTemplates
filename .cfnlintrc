@@ -3,8 +3,5 @@ regions:
   - us-west-2
   - eu-west-1
 
-include_checks:
-  - W
-
 ignore_checks:
   - W3005   # DependsOn auto-inferido; se omite para no exigirlo explícito

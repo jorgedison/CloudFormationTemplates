@@ -9,7 +9,10 @@ Metadata:
         Parameters: [VpcId, SubnetId]
       - Label:
           default: "Instancia"
-        Parameters: [InstanceType, LatestAmiId]
+        Parameters: [InstanceType, LatestAmiId, RootVolumeSize]
+      - Label:
+          default: "Configuracion"
+        Parameters: [EnvironmentName]
     ParameterLabels:
       VpcId:
         default: "ID de la VPC"
@@ -19,6 +22,10 @@ Metadata:
         default: "Tipo de instancia"
       LatestAmiId:
         default: "AMI (SSM Parameter Store)"
+      RootVolumeSize:
+        default: "Tamano del volumen raiz (GiB)"
+      EnvironmentName:
+        default: "Ambiente"
 
 Parameters:
   VpcId:
@@ -38,6 +45,17 @@ Parameters:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
     Description: AMI de Amazon Linux obtenida desde Parameter Store.
+  RootVolumeSize:
+    Type: Number
+    Default: 8
+    MinValue: 8
+    MaxValue: 1024
+    Description: Tamano en GiB del volumen raiz gp3 cifrado.
+  EnvironmentName:
+    Type: String
+    Default: lab
+    AllowedValues: [lab, dev, staging, prod]
+    Description: Ambiente de despliegue usado en los tags.
 
 Resources:
   InstanceSecurityGroup:
@@ -48,6 +66,10 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-sg'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
 
   MyEC2Instance:
     Type: AWS::EC2::Instance
@@ -60,9 +82,20 @@ Resources:
       MetadataOptions:
         HttpEndpoint: enabled
         HttpTokens: required
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            DeleteOnTermination: true
+            Encrypted: true
+            VolumeSize: !Ref RootVolumeSize
+            VolumeType: gp3
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-ec2'
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: ManagedBy
+          Value: CloudFormation
 
 Outputs:
   InstanceID:
